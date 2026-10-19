@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>odds-server</title>
+<style>
+:root {
+  --bg: #eef1f4; --surface: #ffffff; --fg: #16202b; --muted: #5b6876; --line: #d5dce3;
+  --warn: #a8660b;
+  --accent: #1f5fd1; --accent-soft: #e3ecfb; --good: #11804a; --good-soft: #dff3e8; --bad: #b3361f; --bad-soft: #f8e4df;
+  --font-ui: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-num: ui-monospace, "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f151c; --surface: #17202a; --fg: #e6ebf0; --muted: #96a3b1; --line: #2a3644;
+    --warn: #e0a64a;
+    --accent: #6c9cf0; --accent-soft: #1c2b44; --good: #4cc888; --good-soft: #143326; --bad: #f0866f; --bad-soft: #3a1d17;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 760px; margin: 0 auto; padding: 28px 16px 48px; display: grid; gap: 20px; }
+h1 { font-size: 1.6rem; margin: 0; letter-spacing: -0.01em; }
+.sub { color: var(--muted); margin: 4px 0 0; max-width: 64ch; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 14px; min-width: 0; }
+.label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+.field { display: grid; gap: 5px; min-width: 0; }
+input, select { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; width: 100%; min-width: 0; }
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button { font: inherit; cursor: pointer; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn { background: transparent; color: var(--accent); border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; font-weight: 600; justify-self: start; }
+.btn.quiet { color: var(--muted); font-weight: 400; }
+.btn.danger { color: var(--bad); font-weight: 400; }
+.rm { background: transparent; border: 0; color: var(--muted); font-size: 1.2rem; line-height: 1; padding: 6px 8px; border-radius: 6px; }
+.rm:hover { color: var(--bad); }
+/* saved matches */
+.tabs { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.tab { text-align: left; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; display: grid; gap: 3px; min-width: 0; }
+.tab[aria-current="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.tab .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab .meta { display: flex; gap: 6px; align-items: center; font-size: 0.78rem; color: var(--muted); flex-wrap: wrap; }
+.chip { font-family: var(--font-num); font-size: 0.74rem; font-weight: 600; border-radius: 999px; padding: 1px 7px; }
+.chip.good { background: var(--good-soft); color: var(--good); }
+.chip.bad { background: var(--bad-soft); color: var(--bad); }
+.chip.none { background: var(--bg); color: var(--muted); }
+.tab.add { place-items: center; color: var(--accent); font-weight: 600; border-style: dashed; }
+.matchbar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; }
+.matchbar .muted { font-size: 0.85rem; }
+/* odds board */
+.board { display: grid; gap: 8px; }
+.brow { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) 72px 34px; gap: 8px; align-items: center; }
+.brow.head { align-items: end; }
+.brow input.best { border-color: var(--good); background: var(--good-soft); font-weight: 700; }
+.mlabel { display: none; font-size: 0.72rem; color: var(--muted); }
+@media (max-width: 560px) {
+  .brow.head { display: none; }
+  .brow { grid-template-columns: 1fr 1fr; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+  .brow .bk { grid-column: 1 / -1; }
+  .brow .cm { grid-column: 1 / 2; }
+  .brow .rmcell { grid-column: 2 / 3; justify-self: end; align-self: end; }
+  .mlabel { display: block; }
+}
+.status { border-radius: 8px; padding: 12px 14px; font-weight: 600; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; }
+.status.good { background: var(--good-soft); color: var(--good); }
+.status.bad { background: var(--bad-soft); color: var(--bad); }
+.status .detail { font-weight: 400; color: var(--fg); opacity: 0.85; }
+.figures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+@media (max-width: 480px) { .figures { grid-template-columns: 1fr 1fr; } .figures > div:last-child { grid-column: 1 / -1; } }
+.fig .v { font-family: var(--font-num); font-size: 1.35rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.v.good { color: var(--good); } .v.bad { color: var(--bad); }
+.tablewrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th { text-align: right; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { text-align: right; padding: 9px 8px; border-bottom: 1px solid var(--line); font-family: var(--font-num); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; font-family: var(--font-ui); }
+td.amt { font-weight: 600; color: var(--accent); }
+td.neg { color: var(--bad); } td.pos { color: var(--good); }
+.muted { color: var(--muted); }
+.warn { background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; font-size: 0.9rem; }
+.confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.9rem; }
+.notes { color: var(--muted); font-size: 0.9rem; }
+.notes ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+.notes b { color: var(--fg); }
+/* API import */
+.apihead { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; justify-content: space-between; }
+.apirow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.apirow select { flex: 1 1 220px; width: auto; }
+.apilist { display: grid; gap: 6px; max-height: 360px; overflow-y: auto; }
+.apimatch { display: flex; gap: 10px; align-items: center; justify-content: space-between; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.apimatch .who { min-width: 0; display: grid; }
+.apimatch .who b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.apimatch .who span { font-size: 0.8rem; color: var(--muted); }
+.apimatch .side { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+.msg { font-size: 0.88rem; color: var(--muted); margin: 0; }
+/* credit meter */
+.meter { display: grid; gap: 6px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.meter .top { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; justify-content: space-between; }
+.meter .big { font-family: var(--font-num); font-size: 1.15rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.meter .big.good { color: var(--good); } .meter .big.warn { color: var(--warn); } .meter .big.bad { color: var(--bad); }
+.bar { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.bar > span { display: block; height: 100%; border-radius: 999px; background: var(--good); transition: width .3s; }
+.bar > span.warn { background: var(--warn); } .bar > span.bad { background: var(--bad); }
+.meter .sub2 { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.82rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.meter details { font-size: 0.82rem; color: var(--muted); }
+.meter summary { cursor: pointer; }
+.meter ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 2px; font-family: var(--font-num); font-size: 0.78rem; }
+.meter li { display: flex; justify-content: space-between; gap: 10px; }
+.linkbtn { background: none; border: 0; color: var(--accent); padding: 0; font-size: 0.82rem; }
+.msg.err { color: var(--bad); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>odds-server</h1>
+    <p class="sub">Compare tennis match odds across bookmakers, see each player's implied win probability, and spot pricing gaps where the best prices add up to less than 100%. Save up to 5 matches; everything saves automatically.</p>
+  </header>
+
+  <section class="card" id="apiPanel" aria-label="Import from The Odds API" hidden>
+    <div class="apihead">
+      <span class="label">Import odds from The Odds API</span>
+    </div>
+    <div class="meter" id="meter" hidden>
+      <div class="top">
+        <span class="label">API credits this month</span>
+        <span><span class="big" id="mLeft">–</span> <span class="muted" id="mOf"></span></span>
+      </div>
+      <div class="bar" role="progressbar" aria-label="Credits left" aria-valuemin="0" aria-valuemax="100" id="mBarWrap"><span id="mBar" style="width:0%"></span></div>
+      <div class="sub2">
+        <span id="mUsed"></span><span id="mLoads"></span><span id="mUpd"></span>
+        <button type="button" class="linkbtn" id="mRefresh">Check now (free)</button>
+      </div>
+      <details id="mHist"><summary>Recent API calls</summary><ul id="mLog"></ul></details>
+    </div>
+    <div class="apirow">
+      <select id="tour" aria-label="Tournament"><option value="">Loading tournaments…</option></select>
+      <button class="btn" id="loadTour" type="button">Load matches</button>
+      <button class="btn quiet" id="refreshTour" type="button">Refresh odds</button>
+    </div>
+    <p class="msg" id="apiMsg"></p>
+    <div class="apilist" id="apiList"></div>
+  </section>
+
+  <section aria-label="Saved matches" style="display:grid;gap:8px">
+    <span class="label" id="savedLabel">Saved matches</span>
+    <div class="tabs" id="tabs"></div>
+  </section>
+
+  <section class="card" aria-label="Players">
+    <div class="matchbar">
+      <span class="label">This match</span>
+      <span class="muted" id="updated"></span>
+    </div>
+    <div class="grid">
+      <div class="field"><label class="label" for="p0">Player 1</label><input id="p0" type="text" placeholder="e.g. Sinner"></div>
+      <div class="field"><label class="label" for="p1">Player 2</label><input id="p1" type="text" placeholder="e.g. Alcaraz"></div>
+    </div>
+  </section>
+
+  <section class="card" aria-label="Odds board">
+    <span class="label">Odds by bookmaker (decimal)</span>
+    <div class="board">
+      <div class="brow head">
+        <span class="label">Bookmaker</span>
+        <span class="label" id="h0">Player 1</span>
+        <span class="label" id="h1">Player 2</span>
+        <span class="label">Fee %</span>
+        <span></span>
+      </div>
+      <div id="rows" class="board"></div>
+    </div>
+    <button class="btn" id="add" type="button">+ Add bookmaker</button>
+    <p class="muted" style="margin:0;font-size:0.85rem">Leave a box empty if that bookmaker doesn't price the match. Fee % is for exchanges that take a cut of returns; leave it at 0 otherwise.</p>
+  </section>
+
+  <section class="card" aria-label="Allocation">
+    <div class="grid">
+      <div class="field">
+        <label class="label" for="base">Allocate by</label>
+        <select id="base">
+          <option value="total">Total amount</option>
+          <option value="0">Fixed Player 1 amount</option>
+          <option value="1">Fixed Player 2 amount</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="label" for="amount" id="amountLabel">Total amount (units)</label>
+        <input class="num" id="amount" type="number" inputmode="decimal" min="0" step="any">
+      </div>
+      <div class="field">
+        <label class="label" for="round">Round amounts to</label>
+        <select id="round">
+          <option value="0">No rounding</option>
+          <option value="1">1</option>
+          <option value="10">10</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" aria-label="Result" aria-live="polite">
+    <div id="status" class="status"></div>
+    <div id="samebook" class="warn" hidden></div>
+    <p class="msg" id="fair" style="margin:0;font-size:0.9rem;color:var(--muted)"></p>
+    <div class="figures">
+      <div class="fig"><div class="label">Worst-case surplus</div><div class="v" id="fWorst">–</div></div>
+      <div class="fig"><div class="label">Yield</div><div class="v" id="fRoi">–</div></div>
+      <div class="fig"><div class="label">Total allocated</div><div class="v" id="fTotal">–</div></div>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Player</th><th>Best price at</th><th>Odds</th><th>Amount</th><th>Returns</th><th>Net</th></tr></thead>
+        <tbody id="out"></tbody>
+      </table>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+      <button class="btn quiet" id="clear" type="button">Clear odds</button>
+      <button class="btn danger" id="del" type="button">Delete this match</button>
+    </div>
+    <div class="confirm" id="confirmDel" hidden>
+      <span>Delete this saved match?</span>
+      <button class="btn danger" id="delYes" type="button">Delete</button>
+      <button class="btn quiet" id="delNo" type="button">Keep</button>
+    </div>
+  </section>
+
+  <section class="notes">
+    <span class="label">Reading the numbers</span>
+    <ul>
+      <li><b>Implied probability</b> is 1 ÷ decimal odds. Odds of 2.00 imply a 50% chance.</li>
+      <li><b>Overround:</b> a single bookmaker's two probabilities add up to more than 100%. The extra is its margin.</li>
+      <li><b>Pricing gap:</b> when the best price for each player comes from different bookmakers and the two add up to under 100%, the markets disagree. Allocating across both prices returns the same whichever player wins.</li>
+      <li><b>Market view</b> removes each bookmaker's margin and averages them, giving a consensus win probability.</li>
+      <li><b>Odds move quickly,</b> and bookmakers handle mid-match retirements differently, so a gap on paper may not hold up for long.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+(function () {
+  var MAX = 5;
+  var $ = function (id) { return document.getElementById(id); };
+  var num = function (n) { return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+  var pct = function (n) { return (n * 100).toFixed(2) + "%"; };
+  var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+
+  function newMatch(fromBooks) {
+    var books = (fromBooks || [{ name: "Book A" }, { name: "Book B" }, { name: "" }]).map(function (b) {
+      return { name: b.name || "", o: ["", ""], comm: b.comm || "0" };
+    });
+    return { p: ["", ""], books: books, updated: Date.now() };
+  }
+
+  var state = null;
+  try { state = JSON.parse(localStorage.getItem("odds-server-v1") || "null"); } catch (e) {}
+  if (!state || !Array.isArray(state.matches) || !state.matches.length) {
+    state = {
+      matches: [{ p: ["", ""], books: [
+        { name: "Book A", o: ["2.10", "1.70"], comm: "0" },
+        { name: "Book B", o: ["1.95", "1.90"], comm: "0" },
+        { name: "Book C", o: ["1.98", "2.05"], comm: "0" }
+      ], updated: Date.now() }],
+      cur: 0, base: "total", amount: "1000", round: "10"
+    };
+  }
+  if (state.cur >= state.matches.length) state.cur = 0;
+  var save = function () { try { localStorage.setItem("odds-server-v1", JSON.stringify(state)); } catch (e) {} };
+  var M = function () { return state.matches[state.cur]; };
+  var pname = function (m, i) { return (m.p[i] || "").trim() || "Player " + (i + 1); };
+
+  function ago(t) {
+    var s = Math.round((Date.now() - t) / 1000);
+    if (s < 60) return "just now";
+    var m = Math.round(s / 60); if (m < 60) return m + " min ago";
+    var h = Math.round(m / 60); if (h < 24) return h + " hr ago";
+    return Math.round(h / 24) + " d ago";
+  }
+
+  // pure: best price per player and whether they form a pricing gap
+  function analyse(m) {
+    var best = [null, null];
+    m.books.forEach(function (b, bi) {
+      var comm = parseFloat(b.comm) || 0;
+      [0, 1].forEach(function (k) {
+        var odds = parseFloat(b.o[k]);
+        if (!(odds > 1)) return;
+        var eff = 1 + (odds - 1) * (1 - comm / 100);
+        if (!(eff > 1)) return;
+        if (!best[k] || eff > best[k].eff) best[k] = { k: k, bi: bi, book: (b.name || "").trim() || "Bookmaker " + (bi + 1), odds: odds, eff: eff };
+      });
+    });
+    if (!best[0] || !best[1]) return { best: best, ok: false };
+    var inv = 1 / best[0].eff + 1 / best[1].eff;
+    return { best: best, ok: true, inv: inv, gap: inv < 1, margin: 1 / inv - 1 };
+  }
+
+  function renderTabs() {
+    var t = $("tabs");
+    $("savedLabel").textContent = "Saved matches (" + state.matches.length + " of " + MAX + ")";
+    t.innerHTML = state.matches.map(function (m, i) {
+      var a = analyse(m);
+      var title = (m.p[0] || m.p[1]) ? esc(pname(m, 0)) + " v " + esc(pname(m, 1)) : "Match " + (i + 1);
+      var chip = !a.ok ? '<span class="chip none">no odds</span>'
+        : a.gap ? '<span class="chip good">+' + (a.margin * 100).toFixed(1) + '%</span>'
+        : '<span class="chip bad">no gap</span>';
+      return '<button type="button" class="tab" data-i="' + i + '" aria-current="' + (i === state.cur) + '">' +
+        '<span class="t">' + title + '</span><span class="meta">' + chip + '<span>' + ago(m.updated) + '</span></span></button>';
+    }).join("") + (state.matches.length < MAX ? '<button type="button" class="tab add" id="newMatch">+ New match</button>' : "");
+    t.querySelectorAll(".tab[data-i]").forEach(function (b) {
+      b.addEventListener("click", function () { state.cur = +b.getAttribute("data-i"); save(); loadMatch(); });
+    });
+    var nm = $("newMatch");
+    if (nm) nm.addEventListener("click", function () {
+      state.matches.push(newMatch(M().books));
+      state.cur = state.matches.length - 1; save(); loadMatch(); $("p0").focus();
+    });
+  }
+
+  function touch() { M().updated = Date.now(); }
+
+  function renderRows() {
+    var m = M(), rows = $("rows");
+    rows.innerHTML = "";
+    m.books.forEach(function (b, bi) {
+      var r = document.createElement("div");
+      r.className = "brow";
+      r.innerHTML =
+        '<div class="bk"><input id="bn' + bi + '" type="text" aria-label="Bookmaker name" placeholder="Bookmaker"></div>' +
+        '<div class="field"><label class="mlabel" for="o' + bi + '_0"></label><input class="num" id="o' + bi + '_0" type="number" inputmode="decimal" min="1" step="0.01" aria-label="Player 1 odds"></div>' +
+        '<div class="field"><label class="mlabel" for="o' + bi + '_1"></label><input class="num" id="o' + bi + '_1" type="number" inputmode="decimal" min="1" step="0.01" aria-label="Player 2 odds"></div>' +
+        '<div class="field cm"><label class="mlabel" for="c' + bi + '">Fee %</label><input class="num" id="c' + bi + '" type="number" inputmode="decimal" min="0" max="100" step="0.1" aria-label="Fee %"></div>' +
+        '<div class="rmcell"><button class="rm" type="button" aria-label="Remove bookmaker" title="Remove">×</button></div>';
+      rows.appendChild(r);
+      var n = r.querySelector("#bn" + bi), o0 = r.querySelector("#o" + bi + "_0"), o1 = r.querySelector("#o" + bi + "_1"), c = r.querySelector("#c" + bi);
+      n.value = b.name; o0.value = b.o[0]; o1.value = b.o[1]; c.value = b.comm;
+      n.addEventListener("input", function () { b.name = n.value; calc(); });
+      o0.addEventListener("input", function () { b.o[0] = o0.value; touch(); calc(); });
+      o1.addEventListener("input", function () { b.o[1] = o1.value; touch(); calc(); });
+      c.addEventListener("input", function () { b.comm = c.value; calc(); });
+      r.querySelector(".rm").addEventListener("click", function () { m.books.splice(bi, 1); renderRows(); calc(); });
+    });
+  }
+
+  function labels() {
+    var m = M();
+    $("h0").textContent = pname(m, 0); $("h1").textContent = pname(m, 1);
+    $("base").options[1].text = "Fixed " + pname(m, 0) + " amount";
+    $("base").options[2].text = "Fixed " + pname(m, 1) + " amount";
+    $("amountLabel").textContent = state.base === "total" ? "Total amount (units)" : pname(m, +state.base) + " amount (units)";
+    document.querySelectorAll(".mlabel").forEach(function (l) {
+      var f = l.getAttribute("for") || "";
+      if (/_0$/.test(f)) l.textContent = pname(m, 0);
+      if (/_1$/.test(f)) l.textContent = pname(m, 1);
+    });
+    $("updated").textContent = "Odds last edited " + ago(m.updated);
+  }
+
+  function empty(msg) {
+    var st = $("status"); st.className = "status bad"; st.textContent = msg;
+    ["fWorst", "fRoi", "fTotal"].forEach(function (id) { $(id).textContent = "–"; $(id).className = "v"; });
+    $("out").innerHTML = ""; $("samebook").hidden = true; $("fair").textContent = "";
+  }
+
+  function calc() {
+    save(); labels(); renderTabs();
+    var m = M();
+    document.querySelectorAll(".brow input.best").forEach(function (el) { el.classList.remove("best"); });
+    var a = analyse(m);
+    a.best.forEach(function (l) { if (!l) return; var el = $("o" + l.bi + "_" + l.k); if (el) el.classList.add("best"); });
+    var amount = parseFloat(state.amount), r = parseFloat(state.round);
+    if (!a.ok) return empty("Enter odds above 1.00 for both players from at least one bookmaker.");
+    if (!(amount > 0)) return empty("Enter an amount above zero.");
+
+    var legs = a.best.map(function (l) { return Object.assign({ name: pname(m, l.k) }, l); });
+    // ideal amounts, then the rounded combination (round down/up per leg) with the best return
+    var fixed = state.base === "total" ? -1 : +state.base;
+    var raw = legs.map(function (l) {
+      return fixed < 0 ? amount * (1 / l.eff) / a.inv : (l.k === fixed ? amount : amount * legs[fixed].eff / l.eff);
+    });
+    var opts = legs.map(function (l, i) {
+      if (l.k === fixed) return [raw[i]];
+      if (!(r > 0)) return [Math.round(raw[i] * 100) / 100];
+      var lo = Math.floor(raw[i] / r) * r, hi = Math.ceil(raw[i] / r) * r;
+      return lo > 0 && lo !== hi ? [lo, hi] : [hi];
+    });
+    var bestYield = -Infinity;
+    opts[0].forEach(function (s0) { opts[1].forEach(function (s1) {
+      var t = s0 + s1, yld = (Math.min(s0 * legs[0].eff, s1 * legs[1].eff) - t) / t;
+      if (yld > bestYield) { bestYield = yld; legs[0].amt = s0; legs[1].amt = s1; }
+    }); });
+    var total = legs[0].amt + legs[1].amt;
+    legs.forEach(function (l) { l.ret = l.amt * l.eff; l.net = l.ret - total; });
+    var minP = Math.min(legs[0].net, legs[1].net);
+
+    var st = $("status");
+    if (a.gap) {
+      st.className = "status good";
+      st.innerHTML = "Pricing gap: " + pct(a.margin) + "<span class=\"detail\">Best prices imply " + pct(a.inv) + " in total, under 100%. The split below returns the same whichever player wins.</span>";
+    } else {
+      st.className = "status bad";
+      st.innerHTML = "No pricing gap<span class=\"detail\">Even the best prices imply " + pct(a.inv) + " in total. The remaining " + pct(a.inv - 1) + " is bookmaker margin.</span>";
+    }
+    // consensus probability: remove each book's margin, then average
+    var fair = [0, 0], nf = 0;
+    m.books.forEach(function (b) {
+      var c = parseFloat(b.comm) || 0, o0 = parseFloat(b.o[0]), o1 = parseFloat(b.o[1]);
+      if (!(o0 > 1) || !(o1 > 1) || c) return;
+      var q0 = 1 / o0, q1 = 1 / o1; fair[0] += q0 / (q0 + q1); fair[1] += q1 / (q0 + q1); nf++;
+    });
+    $("fair").textContent = nf ? "Market view: " + pname(m, 0) + " " + (fair[0] / nf * 100).toFixed(1) + "% · " + pname(m, 1) + " " +
+      (fair[1] / nf * 100).toFixed(1) + "% win chance (margin-free average of " + nf + " bookmaker" + (nf > 1 ? "s" : "") + ")" : "";
+    var sb = $("samebook");
+    if (legs[0].bi === legs[1].bi) {
+      sb.hidden = false;
+      sb.textContent = "Both best prices are at " + legs[0].book + ". One bookmaker's own prices almost never add up to under 100%, so double-check those odds.";
+    } else sb.hidden = true;
+
+    var cls = "v " + (minP >= 0 ? "good" : "bad");
+    $("fWorst").textContent = (minP >= 0 ? "+" : "−") + num(Math.abs(minP)); $("fWorst").className = cls;
+    $("fRoi").textContent = pct(minP / total); $("fRoi").className = cls;
+    $("fTotal").textContent = num(total);
+    $("out").innerHTML = legs.map(function (l) {
+      return "<tr><td>" + esc(l.name) + "</td><td>" + esc(l.book) + "</td>" +
+        "<td>" + l.odds.toFixed(2) + (Math.abs(l.eff - l.odds) > 1e-9 ? " <span class=\"muted\">(" + l.eff.toFixed(3) + ")</span>" : "") + "</td>" +
+        "<td class=\"amt\">" + num(l.amt) + "</td>" +
+        "<td>" + num(l.ret) + "</td>" +
+        "<td class=\"" + (l.net >= 0 ? "pos" : "neg") + "\">" + (l.net >= 0 ? "+" : "−") + num(Math.abs(l.net)) + "</td></tr>";
+    }).join("");
+  }
+
+  function loadMatch() {
+    var m = M();
+    $("p0").value = m.p[0] || ""; $("p1").value = m.p[1] || "";
+    $("confirmDel").hidden = true;
+    renderRows(); calc();
+  }
+
+  [0, 1].forEach(function (i) { $("p" + i).addEventListener("input", function () { M().p[i] = $("p" + i).value; calc(); }); });
+  $("base").value = state.base; $("amount").value = state.amount; $("round").value = state.round;
+  $("base").addEventListener("change", function () { state.base = $("base").value; calc(); });
+  $("round").addEventListener("change", function () { state.round = $("round").value; calc(); });
+  $("amount").addEventListener("input", function () { state.amount = $("amount").value; calc(); });
+  $("add").addEventListener("click", function () {
+    M().books.push({ name: "", o: ["", ""], comm: "0" });
+    renderRows(); calc();
+    var last = $("bn" + (M().books.length - 1)); if (last) last.focus();
+  });
+  $("clear").addEventListener("click", function () {
+    M().books.forEach(function (b) { b.o = ["", ""]; }); touch(); renderRows(); calc();
+  });
+  $("del").addEventListener("click", function () { $("confirmDel").hidden = false; });
+  $("delNo").addEventListener("click", function () { $("confirmDel").hidden = true; });
+  $("delYes").addEventListener("click", function () {
+    if (state.matches.length === 1) state.matches[0] = newMatch(M().books);
+    else { state.matches.splice(state.cur, 1); state.cur = Math.max(0, state.cur - 1); }
+    save(); loadMatch();
+  });
+  // ---------- The Odds API import (only when opened through server.py) ----------
+  var api = { tours: [], data: null };
+  function apiMsg(t, err) { var e = $("apiMsg"); e.textContent = t || ""; e.className = "msg" + (err ? " err" : ""); }
+  function credits(c) {
+    if (!c || !c.known) {
+      $("meter").hidden = false;
+      $("mLeft").textContent = "–"; $("mOf").textContent = "";
+      $("mUsed").textContent = "Usage shows after your first API call."; $("mLoads").textContent = ""; $("mUpd").textContent = "";
+      return;
+    }
+    var pctLeft = c.pct_left * 100, lvl = pctLeft > 40 ? "good" : pctLeft > 15 ? "warn" : "bad";
+    $("meter").hidden = false;
+    $("mLeft").textContent = c.remaining.toLocaleString(); $("mLeft").className = "big " + lvl;
+    $("mOf").textContent = "left of " + c.total.toLocaleString();
+    $("mBar").style.width = pctLeft.toFixed(1) + "%"; $("mBar").className = lvl === "good" ? "" : lvl;
+    $("mBarWrap").setAttribute("aria-valuenow", pctLeft.toFixed(0));
+    $("mUsed").textContent = c.used.toLocaleString() + " used (" + (100 - pctLeft).toFixed(0) + "%)";
+    $("mLoads").textContent = "≈" + c.loads_left + " tournament loads left at " + c.per_load + " credit" + (c.per_load > 1 ? "s" : "") + " each";
+    $("mUpd").textContent = c.updated ? "updated " + ago(c.updated * 1000) : "";
+    $("mLog").innerHTML = c.log.length ? c.log.map(function (e) {
+      return "<li><span>" + esc(new Date(e.t * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })) +
+        " · " + esc(e.what) + " (" + esc(e.regions) + ")</span><span>−" + e.cost + "</span></li>";
+    }).join("") : "<li>No paid calls yet. Cached loads are free and not listed.</li>";
+  }
+  function getJSON(url) {
+    return fetch(url).then(function (r) {
+      return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || ("HTTP " + r.status)); return j; });
+    });
+  }
+  function fmtTime(iso) {
+    try { return new Date(iso).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" }); }
+    catch (e) { return iso || ""; }
+  }
+  function renderApiList() {
+    var d = api.data, list = $("apiList");
+    if (!d) { list.innerHTML = ""; return; }
+    var ms = d.matches.slice().sort(function (a, b) {
+      var x = a.analysis.ok ? a.analysis.margin : -9, y = b.analysis.ok ? b.analysis.margin : -9; return y - x;
+    });
+    var gaps = ms.filter(function (m) { return m.analysis.gap; }).length;
+    apiMsg(ms.length + " matches, " + gaps + " with a pricing gap. " +
+      (d.from_cache ? "Cached odds from " : "Fresh odds from ") + ago(d.fetched_at * 1000) + ". Load a match to see its full breakdown.");
+    list.innerHTML = ms.map(function (m, i) {
+      var a = m.analysis;
+      var chip = !a.ok ? '<span class="chip none">no odds</span>'
+        : a.gap ? '<span class="chip good">+' + (a.margin * 100).toFixed(1) + '%</span>'
+        : '<span class="chip bad">' + (a.margin * 100).toFixed(1) + '%</span>';
+      return '<div class="apimatch"><div class="who"><b>' + esc(m.players[0]) + ' v ' + esc(m.players[1]) + '</b>' +
+        '<span>' + esc(fmtTime(m.commence)) + ' · ' + m.books.length + ' books</span></div>' +
+        '<div class="side">' + chip + '<button class="btn" type="button" data-id="' + esc(m.id) + '">Load</button></div></div>';
+    }).join("");
+    list.querySelectorAll("button[data-id]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var id = b.getAttribute("data-id");
+        importMatch(api.data.matches.filter(function (m) { return m.id === id; })[0]);
+      });
+    });
+  }
+  function importMatch(mt) {
+    if (!mt) return;
+    var m = M();
+    var hasOdds = m.books.some(function (b) { return b.o[0] || b.o[1]; });
+    if (hasOdds) {
+      if (state.matches.length >= MAX) { apiMsg("All " + MAX + " match slots are used. Clear or delete a match first.", true); return; }
+      state.matches.push(newMatch(m.books)); state.cur = state.matches.length - 1; m = M();
+    }
+    var apiNames = mt.books.map(function (bk) { return bk.name.toLowerCase(); });
+    // keep bookmakers the user added by hand; drop sample placeholders and books the API already covers
+    var local = m.books.filter(function (b) {
+      var n = (b.name || "").trim();
+      return n && !/\(API\)$/.test(n) && !/^Book [A-Z]$/.test(n) && apiNames.indexOf(n.toLowerCase()) < 0;
+    })
+      .map(function (b) { return { name: b.name, o: ["", ""], comm: b.comm || "0" }; });
+    var picked = {}, rows = [];
+    [0, 1].forEach(function (k) {
+      mt.books.slice().sort(function (a, b) { return b.odds[k] - a.odds[k]; }).slice(0, 3).forEach(function (bk) {
+        if (picked[bk.key]) return; picked[bk.key] = 1;
+        rows.push({ name: bk.name + " (API)", o: [String(bk.odds[0]), String(bk.odds[1])], comm: "0" });
+      });
+    });
+    m.p = mt.players.slice(); m.books = local.concat(rows);
+    m.updated = (api.data.fetched_at || Date.now() / 1000) * 1000;
+    save(); loadMatch();
+    apiMsg("Loaded " + mt.players[0] + " v " + mt.players[1] + " with the top API prices. Add any other bookmaker in the empty rows.");
+    var first = document.querySelector("#rows input.num"); if (first) first.scrollIntoView({ block: "center" });
+  }
+  function loadOdds(force) {
+    var sport = $("tour").value;
+    if (!sport) { apiMsg("Pick a tournament first.", true); return; }
+    apiMsg(force ? "Fetching fresh odds (uses credits)…" : "Loading odds…");
+    getJSON("/api/odds?sport=" + encodeURIComponent(sport) + (force ? "&refresh=1" : ""))
+      .then(function (d) { api.data = d; credits(d.credits); renderApiList(); })
+      .catch(function (e) { apiMsg(e.message, true); });
+  }
+  if (location.protocol.indexOf("http") === 0) {
+    getJSON("/api/status").then(function (st) {
+      $("apiPanel").hidden = false;
+      if (!st.key_set) {
+        $("tour").innerHTML = '<option value="">No API key</option>';
+        ["tour", "loadTour", "refreshTour"].forEach(function (id) { $(id).disabled = true; });
+        apiMsg("Add your key to the .env file (ODDS_API_KEY=...) and restart the app.", true);
+        return;
+      }
+      credits(st.credits);
+      return getJSON("/api/tournaments").then(function (t) {
+        credits(t.credits);
+        api.tours = t.tournaments;
+        $("tour").innerHTML = t.tournaments.length
+          ? t.tournaments.map(function (x) { return '<option value="' + esc(x.key) + '">' + esc(x.title) + '</option>'; }).join("")
+          : '<option value="">No tennis tournaments active right now</option>';
+        apiMsg(t.tournaments.length ? "Pick a tournament and load its matches. Each load costs about 1 credit per region." : "");
+      });
+    }).catch(function (e) { if ($("apiPanel").hidden === false) apiMsg(e.message, true); });
+    $("loadTour").addEventListener("click", function () { loadOdds(false); });
+    $("mRefresh").addEventListener("click", function () {
+      $("mUpd").textContent = "checking…";
+      getJSON("/api/credits?refresh=1").then(function (d) { credits(d.credits); })
+        .catch(function (e) { apiMsg(e.message, true); });
+    });
+    $("refreshTour").addEventListener("click", function () { loadOdds(true); });
+  }
+
+  setInterval(function () { labels(); renderTabs(); }, 60000);
+  loadMatch();
+})();
+</script>
+</body>
+</html>

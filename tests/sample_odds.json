@@ -1,0 +1,32 @@
+[
+  {
+    "id": "evt1",
+    "sport_key": "tennis_atp_sample",
+    "sport_title": "ATP Sample Open",
+    "commence_time": "2026-10-15T08:00:00Z",
+    "home_team": "Player Alpha",
+    "away_team": "Player Beta",
+    "bookmakers": [
+      {"key": "booka", "title": "Book A", "last_update": "2026-10-14T01:00:00Z",
+       "markets": [{"key": "h2h", "outcomes": [{"name": "Player Alpha", "price": 2.10}, {"name": "Player Beta", "price": 1.70}]}]},
+      {"key": "bookb", "title": "Book B", "last_update": "2026-10-14T01:00:00Z",
+       "markets": [{"key": "h2h", "outcomes": [{"name": "Player Beta", "price": 2.05}, {"name": "Player Alpha", "price": 1.80}]}]},
+      {"key": "bookc", "title": "Book C", "last_update": "2026-10-14T01:00:00Z",
+       "markets": [{"key": "spreads", "outcomes": [{"name": "Player Alpha", "price": 1.9}, {"name": "Player Beta", "price": 1.9}]}]}
+    ]
+  },
+  {
+    "id": "evt2",
+    "sport_key": "tennis_atp_sample",
+    "sport_title": "ATP Sample Open",
+    "commence_time": "2026-10-15T10:00:00Z",
+    "home_team": "Player Gamma",
+    "away_team": "Player Delta",
+    "bookmakers": [
+      {"key": "booka", "title": "Book A", "last_update": "2026-10-14T01:00:00Z",
+       "markets": [{"key": "h2h", "outcomes": [{"name": "Player Gamma", "price": 1.50}, {"name": "Player Delta", "price": 2.50}]}]},
+      {"key": "bookb", "title": "Book B", "last_update": "2026-10-14T01:00:00Z",
+       "markets": [{"key": "h2h", "outcomes": [{"name": "Player Gamma", "price": 1.55}, {"name": "Player Delta", "price": 2.40}]}]}
+    ]
+  }
+]
