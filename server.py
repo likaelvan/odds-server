@@ -13,6 +13,8 @@ from urllib.parse import parse_qs, urlparse
 
 from odds_server.env import load_env, setting
 from odds_server.odds_api import OddsAPI, OddsAPIError
+from odds_server.stats import Stats, StatsError
+from odds_server.wiki import WikiClient, WikiError, add_live_rankings
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(ROOT, "web")
@@ -22,6 +24,22 @@ PAGES = {"/": "index.html", "/index.html": "index.html",
 load_env(os.path.join(ROOT, ".env"))
 _api = None
 _lock = threading.Lock()
+_stats = {}  # tour -> (index mtime, Stats)
+DATA = os.path.join(ROOT, ".data")
+_wiki = WikiClient(os.path.join(ROOT, ".cache", "wiki"))
+_wiki_lock = threading.Lock()
+
+
+def get_stats(tour):
+    """Load (or reload after update_stats.py) the player index for a tour."""
+    path = os.path.join(DATA, "%s_index.json" % tour)
+    if not os.path.exists(path):
+        raise StatsError("No %s player data yet. Run: py update_stats.py" % tour.upper())
+    mtime = os.path.getmtime(path)
+    cached = _stats.get(tour)
+    if not cached or cached[0] != mtime:
+        _stats[tour] = (mtime, Stats(path))
+    return _stats[tour][1]
 
 
 def get_api():
@@ -52,6 +70,35 @@ class Handler(BaseHTTPRequestHandler):
             with open(os.path.join(WEB, PAGES[url.path]), "rb") as f:
                 return self._send(200, f.read(), "text/html; charset=utf-8")
         try:
+            if url.path == "/api/stats-status":
+                out = {}
+                for tour in ("atp", "wta"):
+                    try:
+                        with _lock:
+                            st = get_stats(tour)
+                        info = st.matchup("", "")
+                        out[tour] = {"ready": True, "data_through": info["data_through"],
+                                     "rankings_date": info["rankings_date"]}
+                    except (StatsError, OSError, ValueError) as e:
+                        out[tour] = {"ready": False, "error": str(e)}
+                return self._send(200, out)
+            if url.path == "/api/matchup":
+                tour = (q.get("tour") or [""])[0].lower()
+                if tour not in ("atp", "wta"):
+                    return self._send(400, {"error": "Pick ATP or WTA."})
+                p1, p2 = (q.get("p1") or [""])[0], (q.get("p2") or [""])[0]
+                try:
+                    with _lock:
+                        out = get_stats(tour).matchup(p1, p2)
+                except StatsError as e:
+                    return self._send(404, {"error": str(e)})
+                if setting("LIVE_RANKS", "1") != "0":
+                    with _wiki_lock:  # current rank / career high from Wikipedia (cached for a day)
+                        try:
+                            add_live_rankings(out, _wiki)
+                        except WikiError as e:
+                            out["live_error"] = str(e)
+                return self._send(200, out)
             regions = setting("ODDS_REGIONS", "eu,uk")
             if url.path == "/api/status":
                 if not setting("ODDS_API_KEY"):

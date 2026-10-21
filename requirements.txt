@@ -1,0 +1,3 @@
+# Only needed for the Wikipedia updater (live rankings + recent results).
+# The odds features use the Python standard library alone.
+mwparserfromhell>=0.6,<0.8

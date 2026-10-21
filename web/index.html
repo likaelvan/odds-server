@@ -116,6 +116,30 @@ td.neg { color: var(--bad); } td.pos { color: var(--good); }
 .meter li { display: flex; justify-content: space-between; gap: 10px; }
 .linkbtn { background: none; border: 0; color: var(--accent); padding: 0; font-size: 0.82rem; }
 .msg.err { color: var(--bad); }
+/* player stats */
+.statshead { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { background: transparent; border: 0; color: var(--muted); padding: 5px 12px; font-weight: 600; font-size: 0.85rem; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.pgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+@media (max-width: 640px) { .pgrid { grid-template-columns: 1fr; } }
+.pcol { display: grid; gap: 10px; align-content: start; min-width: 0; }
+.pcol h3 { margin: 0; font-size: 1.05rem; }
+.pcol .matchnote { font-size: 0.78rem; color: var(--muted); }
+.facts { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; font-size: 0.9rem; }
+.facts dt { color: var(--muted); } .facts dd { margin: 0; font-variant-numeric: tabular-nums; }
+.rankbig { font-family: var(--font-num); font-size: 1.6rem; font-weight: 600; line-height: 1; }
+.form { display: flex; gap: 3px; flex-wrap: wrap; }
+.form span { width: 20px; height: 20px; border-radius: 4px; display: grid; place-items: center; font-size: 0.7rem; font-weight: 700; font-family: var(--font-num); }
+.form .W { background: var(--good-soft); color: var(--good); } .form .L { background: var(--bad-soft); color: var(--bad); }
+table.mini { font-size: 0.8rem; }
+table.mini td, table.mini th { padding: 5px 6px; text-align: left; font-family: var(--font-ui); white-space: normal; vertical-align: top; }
+table.mini td.num { white-space: nowrap; }
+table.mini td.num { font-family: var(--font-num); }
+table.mini td.res { font-weight: 700; } table.mini td.res.W { color: var(--good); } table.mini td.res.L { color: var(--bad); }
+.h2h { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 8px; }
+.h2h .score { font-size: 1.05rem; font-weight: 600; }
+.datanote { font-size: 0.78rem; color: var(--muted); margin: 0; }
 </style>
 </head>
 <body>
@@ -233,6 +257,18 @@ td.neg { color: var(--bad); } td.pos { color: var(--good); }
       <button class="btn danger" id="delYes" type="button">Delete</button>
       <button class="btn quiet" id="delNo" type="button">Keep</button>
     </div>
+  </section>
+
+  <section class="card" id="statsCard" aria-label="Player stats" hidden>
+    <div class="statshead">
+      <span class="label">Player stats</span>
+      <div class="seg" role="group" aria-label="Tour">
+        <button type="button" id="tourAtp" aria-pressed="false">ATP</button>
+        <button type="button" id="tourWta" aria-pressed="false">WTA</button>
+      </div>
+    </div>
+    <div id="statsBody"><p class="msg">Loading player data…</p></div>
+    <p class="datanote" id="statsNote"></p>
   </section>
 
   <section class="notes">
@@ -443,7 +479,7 @@ td.neg { color: var(--bad); } td.pos { color: var(--good); }
     var m = M();
     $("p0").value = m.p[0] || ""; $("p1").value = m.p[1] || "";
     $("confirmDel").hidden = true;
-    renderRows(); calc();
+    renderRows(); calc(); queueStats(0);
   }
 
   [0, 1].forEach(function (i) { $("p" + i).addEventListener("input", function () { M().p[i] = $("p" + i).value; calc(); }); });
@@ -546,7 +582,7 @@ td.neg { color: var(--bad); } td.pos { color: var(--good); }
         rows.push({ name: bk.name + " (API)", o: [String(bk.odds[0]), String(bk.odds[1])], comm: "0" });
       });
     });
-    m.p = mt.players.slice(); m.books = local.concat(rows);
+    m.p = mt.players.slice(); m.books = local.concat(rows); m.tour = tourOf(api.data.sport);
     m.updated = (api.data.fetched_at || Date.now() / 1000) * 1000;
     save(); loadMatch();
     apiMsg("Loaded " + mt.players[0] + " v " + mt.players[1] + " with the top API prices. Add any other bookmaker in the empty rows.");
@@ -586,6 +622,106 @@ td.neg { color: var(--bad); } td.pos { color: var(--good); }
         .catch(function (e) { apiMsg(e.message, true); });
     });
     $("refreshTour").addEventListener("click", function () { loadOdds(true); });
+  }
+
+// ---------- player stats (open datasets, via server.py) ----------
+  var statsState = { ready: null, key: "", timer: null };
+  function tourOf(sport) { var k = (sport || "").toLowerCase(); return /(^|_)wta(_|$)/.test(k) ? "wta" : "atp"; }
+  function curTour() { var m = M(); return m.tour || (statsState.ready && !statsState.ready.atp.ready && statsState.ready.wta.ready ? "wta" : "atp"); }
+  function queueStats(delay) {
+    if (!statsState.ready) return;
+    clearTimeout(statsState.timer);
+    statsState.timer = setTimeout(loadStats, delay == null ? 500 : delay);
+  }
+  function shortDate(d) {
+    if (!d) return "–";
+    try { return new Date(d + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short", year: "2-digit" }); }
+    catch (e) { return d; }
+  }
+  function fmtDate(d) {
+    if (!d) return "–";
+    try { return new Date(d + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }); }
+    catch (e) { return d; }
+  }
+  function playerCol(p) {
+    if (!p.match) {
+      return '<div class="pcol"><h3>' + esc(p.query || "–") + '</h3><p class="msg">Not found in the ' + curTour().toUpperCase() +
+        ' data. Check the spelling or switch tour.</p></div>';
+    }
+    var note = p.match === "exact" ? "" : '<span class="matchnote">Matched to "' + esc(p.name) + '" (' + (p.match === "reordered" ? "name order swapped" : "closest name") + ')</span>';
+    var facts = [
+      ["Career high", p.career_high ? "#" + p.career_high + " <span class=\"muted\">(" + fmtDate(p.career_high_date) + ")</span>" : "–"],
+      ["Country", esc(p.country || "–")],
+      ["Age", p.age != null ? p.age : "–"],
+      ["Plays", esc(p.plays || "–")],
+      ["Height", p.height_cm ? p.height_cm + " cm" : "–"]
+    ].map(function (f) { return "<dt>" + f[0] + "</dt><dd>" + f[1] + "</dd>"; }).join("");
+    var form = p.form ? '<div class="form" aria-label="Recent form, newest first">' + p.form.split("").map(function (r) { return '<span class="' + r + '">' + r + "</span>"; }).join("") + "</div>" : "";
+    var rows = p.last_matches.map(function (m) {
+      return "<tr><td class=\"num\">" + esc(shortDate(m.date)) + "</td><td>" + esc(m.tournament) + " <span class=\"muted\">" + esc(m.round) + "</span></td>" +
+        "<td>" + esc(m.opponent) + (m.opponent_rank ? " <span class=\"muted\">(" + m.opponent_rank + ")</span>" : "") + "</td>" +
+        "<td class=\"num\">" + esc(m.score) + "</td><td class=\"res " + m.result + "\">" + m.result + "</td></tr>";
+    }).join("");
+    return '<div class="pcol"><div><h3>' + esc(p.name) + '</h3>' + note + '</div>' +
+      '<div><span class="label">Current rank</span><div class="rankbig">' + (p.rank ? "#" + p.rank : "–") + '</div>' +
+      (p.points ? '<span class="muted" style="font-size:0.82rem">' + p.points.toLocaleString() + " points · </span>" : "") +
+      (p.rank ? '<span class="muted" style="font-size:0.82rem">' + (p.rank_source === "wikipedia" ? "Wikipedia, " : "archive, ") + esc(fmtDate(p.rank_date)) + "</span>" : "") + "</div>" +
+      '<dl class="facts">' + facts + "</dl>" +
+      (p.last_matches.length ? '<span class="label">Last ' + p.last_matches.length + " matches</span>" + form +
+        '<div class="tablewrap"><table class="mini"><thead><tr><th>Week</th><th>Event</th><th>Opponent</th><th>Score</th><th></th></tr></thead><tbody>' + rows + "</tbody></table></div>"
+        : '<p class="msg">No recent matches in the data.</p>') + "</div>";
+  }
+  function renderStats(d) {
+    var pl = d.players, h = d.h2h, h2h = "";
+    if (h) {
+      var a = pl[0].name, b = pl[1].name, n = h.wins + h.losses;
+      var head = !n ? "No previous meetings in the data" :
+        h.wins === h.losses ? "Level at " + h.wins + "–" + h.losses :
+        (h.wins > h.losses ? esc(a) + " leads " + h.wins + "–" + h.losses : esc(b) + " leads " + h.losses + "–" + h.wins);
+      h2h = '<div class="h2h"><span class="label">Head-to-head</span><div class="score">' + head + "</div>" +
+        (n ? '<div class="tablewrap"><table class="mini"><thead><tr><th>Week</th><th>Event</th><th>Surface</th><th>Winner</th><th>Score</th></tr></thead><tbody>' +
+          h.meetings.map(function (m) {
+            return "<tr><td class=\"num\">" + esc(shortDate(m.date)) + "</td><td>" + esc(m.tournament) + " <span class=\"muted\">" + esc(m.round) + "</span></td><td>" +
+              esc(m.surface || "–") + "</td><td>" + esc(m.result === "W" ? a : b) + "</td><td class=\"num\">" + esc(m.score) + "</td></tr>";
+          }).join("") + "</tbody></table></div>" : "") + "</div>";
+    }
+    $("statsBody").innerHTML = '<div class="pgrid">' + playerCol(pl[0]) + playerCol(pl[1]) + "</div>" + h2h;
+    $("statsNote").textContent = "Results through " + fmtDate(d.data_through) +
+      (d.wiki_through ? " (archive to June 2026, then Wikipedia draws)" : "") +
+      (d.live_error ? " · live ranks unavailable: " + d.live_error : "") +
+      ". Sources: Jeff Sackmann's ATP/WTA datasets (CC BY-NC-SA 4.0) and Wikipedia (CC BY-SA 4.0). Run update.bat weekly for new results.";
+  }
+  function setTourButtons(t) {
+    $("tourAtp").setAttribute("aria-pressed", t === "atp"); $("tourWta").setAttribute("aria-pressed", t === "wta");
+  }
+  function loadStats() {
+    var m = M(), t = curTour();
+    setTourButtons(t);
+    if (!statsState.ready[t].ready) {
+      $("statsBody").innerHTML = '<p class="msg">No ' + t.toUpperCase() + ' player data yet. In a terminal in this folder, run <b>py update_stats.py</b>, then reload this page.</p>';
+      $("statsNote").textContent = ""; return;
+    }
+    var p1 = (m.p[0] || "").trim(), p2 = (m.p[1] || "").trim();
+    if (!p1 && !p2) { $("statsBody").innerHTML = '<p class="msg">Enter both player names above to see rankings, recent form and head-to-head.</p>'; $("statsNote").textContent = ""; return; }
+    var key = t + "|" + p1 + "|" + p2;
+    if (key === statsState.key) return;
+    statsState.key = key;
+    getJSON("/api/matchup?tour=" + t + "&p1=" + encodeURIComponent(p1) + "&p2=" + encodeURIComponent(p2))
+      .then(function (d) { if (statsState.key === key) renderStats(d); })
+      .catch(function (e) { $("statsBody").innerHTML = '<p class="msg err">' + esc(e.message) + "</p>"; });
+  }
+  if (location.protocol.indexOf("http") === 0) {
+    getJSON("/api/stats-status").then(function (st) {
+      statsState.ready = st;
+      $("statsCard").hidden = false;
+      loadStats();
+    }).catch(function () {});
+    ["atp", "wta"].forEach(function (t) {
+      $(t === "atp" ? "tourAtp" : "tourWta").addEventListener("click", function () {
+        M().tour = t; save(); statsState.key = ""; loadStats();
+      });
+    });
+    [0, 1].forEach(function (i) { $("p" + i).addEventListener("input", function () { queueStats(); }); });
   }
 
   setInterval(function () { labels(); renderTabs(); }, 60000);

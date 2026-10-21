@@ -23,6 +23,8 @@ Python's standard library and a single HTML page.
   is listed and sorted by how much the bookmakers disagree.
 - **Save up to 5 matches** you're following. They're stored in your browser.
 - **Watch your API usage.** A built-in meter tracks your free monthly credits.
+- **Check out the players.** Current and career-high ranking, age, country and playing hand, the last 10
+  results with scores, and their head-to-head record. All computed locally from open match data.
 - **Use it from the terminal** with `scan.py`, if you prefer text output.
 
 ## The ideas behind it
@@ -76,7 +78,7 @@ combination with the best worst-case result is kept.
 
 ## Getting started
 
-You'll need **Python 3.9+**. No packages to install and no virtual environment needed.
+You'll need **Python 3.9+**. The odds features need no packages at all; player stats need one (see below).
 
 1. **Get a free API key** from [the-odds-api.com](https://the-odds-api.com). The free plan gives 500 credits a month.
 2. **Add your key.** Copy `.env.example` to `.env` and fill in `ODDS_API_KEY=...`.
@@ -87,6 +89,54 @@ You'll need **Python 3.9+**. No packages to install and no virtual environment n
    Your browser opens at http://127.0.0.1:8765.
 
 No key? Open `web/odds-server-offline.html` directly and type odds in by hand.
+
+### Player stats
+
+Player stats need one extra package, so they use a virtual environment. Do this once:
+
+```bash
+# Windows: double-click setup.bat, then update.bat
+python -m venv .venv
+.venv/bin/pip install -r requirements.txt        # Windows: .venv\Scripts\pip ...
+.venv/bin/python update_stats.py                 # first run: roughly 100–200 MB
+```
+
+After that, run `update.bat` **weekly** to pick up new results. It downloads the archive only the first time
+(it never changes) and afterwards just fetches new draws from Wikipedia (`update.bat --redownload` forces a fresh archive).
+Restart the app, and a **Player stats** card appears under every match.
+
+The data is stitched together from two open sources:
+
+| What | Source | How fresh |
+|---|---|---|
+| Match history since 2015, head-to-head, ranking history | Jeff Sackmann's ATP/WTA datasets, via a [public archive](https://huggingface.co/datasets/Aneeshers/tennis-sackmann-archive) (the original GitHub repos were taken down in 2026) | Frozen at June 2026 |
+| Results since then | Every tournament draw page on Wikipedia, found through the "2026 ATP Tour" / "2026 WTA Tour" season pages | As fresh as your last `update.bat` |
+| Current rank, career high | Each player's Wikipedia page, looked up live and cached for a day | Weekly, as editors update it |
+
+Player names are matched across sources even when accents, typos or name order differ ("Shi Han" ↔ "Han Shi").
+Results from Wikipedia are dated by tournament week and don't include opponent rankings.
+
+Draw pages on Wikipedia come in a few shapes: some have the whole bracket, Grand Slams often split it into
+sections on sub-pages, and smaller events sometimes redirect to the tournament's main page. The updater follows
+sub-pages and redirects (reading only the Singles section, never doubles). Qualifying matches are included and
+labelled Q1/Q2/Q3 (from the draw page's qualifying section, or the separate qualifying page at Grand Slams).
+It then checks each main draw is complete:
+a final was played, every player but the champion lost once, and every round adds up. Each run prints a line
+per tournament, marking `! some results missing` or `! no draw found` where Wikipedia itself has gaps.
+
+#### Why Wikipedia and not the tour websites?
+
+The WTA and ATP sites' terms of use forbid automated collection, and score sites like Flashscore block bots.
+Wikipedia welcomes automated *reading* through its official API, as long as clients behave. So odds-server:
+
+- calls the MediaWiki API (not the HTML pages) with a descriptive `User-Agent`,
+- sends one request at a time, at most one per second, batching up to 20 pages per request,
+- respects `maxlag` and backs off when Wikipedia is busy,
+- caches every page on disk so repeated runs don't re-download.
+
+No headless browser is needed: the API returns plain data, and
+[`mwparserfromhell`](https://github.com/earwig/mwparserfromhell) reads the wikitext templates
+(infoboxes and draw brackets).
 
 ### Terminal version
 
@@ -112,12 +162,15 @@ The tests run against a small fake API server, so they never use your real credi
 | `ODDS_REGIONS` | `eu,uk` | Which bookmakers to include, by region: `uk`, `eu`, `us`, `au` (1 credit each per tournament load) |
 | `CACHE_MINUTES` | `10` | How long downloaded odds are reused before spending credits again |
 | `PORT` | `8765` | Local port for the web page |
+| `STATS_SINCE` | `2015` | First season of results downloaded for head-to-head |
+| `STATS_RANKING_DECADES` | `10s,20s` | Ranking history used for career-high rank |
+| `LIVE_RANKS` | `1` | Look up current rank / career high on Wikipedia (`0` to turn off) |
 
 ## How it's built
 
 ```
 browser (web/index.html)
-   │  fetch /api/tournaments, /api/odds, /api/credits
+   │  fetch /api/tournaments, /api/odds, /api/credits, /api/matchup
    ▼
 server.py                ── tiny local web server; keeps your API key off the page
    │
@@ -126,14 +179,22 @@ odds_server/odds_api.py  ── The Odds API client: caching, error messages, cr
    │
    ▼
 odds_server/core.py      ── the maths: implied probability, best prices, gaps, allocation
+
+server.py ── odds_server/stats.py ── player index (archive + Wikipedia draws, built by update_stats.py)
+          └─ odds_server/wiki.py  ── live current / career-high rank from Wikipedia player pages
 ```
 
 ```
 odds_server/core.py           pure functions, fully unit-tested
 odds_server/odds_api.py       API client
+odds_server/stats.py          player data: download, index, name matching, form, head-to-head
+odds_server/wiki.py           Wikipedia API client + infobox and draw-bracket parsers
 odds_server/env.py            tiny .env reader
 server.py                     local web server
 scan.py                       command-line version
+update_stats.py               downloads player data and builds the index
+setup.bat / update.bat        Windows helpers: create the venv / refresh player data
+requirements.txt              mwparserfromhell (only needed for player stats)
 web/index.html                the web page
 web/odds-server-offline.html  same page, no server needed
 tests/                        unit tests + a sample API response
@@ -149,3 +210,7 @@ tests/                        unit tests + a sample API response
 
 A personal project for exploring tennis odds, probability and how prices form in a market.
 Not financial advice.
+
+Player data: Jeff Sackmann / Tennis Abstract, [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/),
+and Wikipedia contributors, [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+The data is downloaded to your machine and isn't included in this repository.
