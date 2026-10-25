@@ -114,7 +114,9 @@ The data is stitched together from two open sources:
 | Current rank, career high | Each player's Wikipedia page, looked up live and cached for a day | Weekly, as editors update it |
 
 Player names are matched across sources even when accents, typos or name order differ ("Shi Han" ↔ "Han Shi").
-Results from Wikipedia are dated by tournament week and don't include opponent rankings.
+Results from Wikipedia are dated by **tournament week** (draw pages don't give per-match dates), so a run to the
+fourth round shows four matches in the same week; the round column (1R, 2R, 3R, 4R…) gives the order. They also
+don't include the opponent's ranking at the time.
 
 Draw pages on Wikipedia come in a few shapes: some have the whole bracket, Grand Slams often split it into
 sections on sub-pages, and smaller events sometimes redirect to the tournament's main page. The updater follows
@@ -123,6 +125,17 @@ labelled Q1/Q2/Q3 (from the draw page's qualifying section, or the separate qual
 It then checks each main draw is complete:
 a final was played, every player but the champion lost once, and every round adds up. Each run prints a line
 per tournament, marking `! some results missing` or `! no draw found` where Wikipedia itself has gaps.
+
+#### Merging the two sources
+
+The catch-up deliberately starts two weeks before the archive ends, so tournaments that were only half-recorded
+in the archive get their later rounds. That overlap means some matches arrive from both sources, so when merging:
+
+- a Wikipedia match is skipped only if the **archive** has the same two players **in the same tournament week**
+  (within 6 days);
+- otherwise it's kept, even if the same players met a couple of weeks earlier. Rematches are common (for example
+  Cincinnati 4R and US Open 4R three weeks apart), and an earlier, looser rule wrongly dropped them;
+- a match listed twice on Wikipedia (same players, week and round) is kept once.
 
 #### Why Wikipedia and not the tour websites?
 
@@ -205,6 +218,9 @@ tests/                        unit tests + a sample API response
 - Odds move quickly, so a gap you see now may close a few minutes later. Free-plan data can also lag a little.
 - Bookmakers handle a mid-match retirement differently, which matters when you compare their prices.
 - Coverage depends on The Odds API. Grand Slams and the bigger ATP/WTA events are covered best.
+- Dropped connections (e.g. `WinError 10054`) are retried automatically, three times with short pauses. If it still
+  fails, check your internet connection, VPN or firewall; some networks block betting-related sites.
+- After changing anything in `.data/`, rebuild the player index without downloading: `update_stats.py --build-only`.
 
 ## About
 

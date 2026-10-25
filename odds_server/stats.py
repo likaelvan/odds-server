@@ -227,17 +227,24 @@ def merge_wiki_matches(players, matches, wiki_matches):
         s = str(d)
         return date(int(s[:4]), int(s[4:6]), int(s[6:8])).toordinal()
 
-    added, latest = 0, None
+    added, latest, seen = 0, None, set()
     for i, wm in enumerate(wiki_matches):
         w, l = pid_for(wm["winner"]), pid_for(wm["loser"])
         if w == l:
             continue
         key = frozenset((w, l))
-        if any(abs(days(d) - days(wm["date"])) <= 21 for d in pair_dates.get(key, [])):
-            continue  # same pairing within three weeks: the dataset already has this match
+        # Duplicate of an archive match: same two players in the same tournament week. Only the
+        # archive is checked (pair_dates is never extended with Wikipedia rows), and the window is
+        # a few days, because the same players often meet again a couple of weeks later
+        # (e.g. Cincinnati 4R and US Open 4R, three weeks apart).
+        if any(abs(days(d) - days(wm["date"])) <= 6 for d in pair_dates.get(key, [])):
+            continue
+        dup = (key, wm["date"], wm["round"])
+        if dup in seen:  # listed twice on Wikipedia (e.g. main page and a sub-page)
+            continue
+        seen.add(dup)
         matches.append([wm["date"], wm["tournament"], wm.get("surface", ""), "wiki", wm["round"], 1000 + i,
                         w, l, wm["score"], None, None])
-        pair_dates.setdefault(key, []).append(wm["date"])
         added += 1
         latest = max(latest or 0, wm["date"])
     return added, latest

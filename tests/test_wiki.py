@@ -168,3 +168,32 @@ class MergeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RematchTests(unittest.TestCase):
+    """Two players meeting twice a few weeks apart are two matches, not a duplicate."""
+
+    def test_rematch_three_weeks_later_is_kept(self):
+        from odds_server.stats import merge_wiki_matches
+        players = {"1": {"name": "Sorana Cirstea"}, "2": {"name": "Jessica Pegula"}}
+        matches = []
+        wiki_rows = [
+            {"date": 20260810, "tournament": "Cincinnati Open", "round": "4R", "winner": "Jessica Pegula",
+             "loser": "Sorana Cîrstea", "score": "6-2 4-6 7-5"},
+            {"date": 20260831, "tournament": "US Open", "round": "4R", "winner": "Jessica Pegula",
+             "loser": "Sorana Cîrstea", "score": "6-3 6-4"},
+            {"date": 20260831, "tournament": "US Open", "round": "4R", "winner": "Jessica Pegula",
+             "loser": "Sorana Cîrstea", "score": "6-3 6-4"},   # same match listed twice
+        ]
+        added, _ = merge_wiki_matches(players, matches, wiki_rows)
+        self.assertEqual(added, 2)
+        self.assertEqual([m[1] for m in matches], ["Cincinnati Open", "US Open"])
+
+    def test_archive_duplicate_same_week_is_skipped(self):
+        from odds_server.stats import merge_wiki_matches
+        players = {"1": {"name": "Sorana Cirstea"}, "2": {"name": "Mirra Andreeva"}}
+        matches = [[20260525, "Roland Garros", "Clay", "G", "QF", 1, "2", "1", "6-0 6-3", 5, 30]]
+        rows = [{"date": 20260525, "tournament": "French Open", "round": "QF", "winner": "Mirra Andreeva",
+                 "loser": "Sorana Cîrstea", "score": "6-0 6-3"}]
+        added, _ = merge_wiki_matches(players, matches, rows)
+        self.assertEqual(added, 0)
