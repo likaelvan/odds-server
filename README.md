@@ -13,6 +13,10 @@ Python's standard library and a single HTML page.
 
 ## What you can do with it
 
+| Players | Head-to-head |
+|---|---|
+| ![Player profile](docs/players.png) | ![Head-to-head](docs/h2h.png) |
+
 - **See the market's view of a match.** Every bookmaker's price is converted into an implied win
   probability. Their built-in margins are removed and the results are averaged into one consensus
   number per player.
@@ -24,7 +28,12 @@ Python's standard library and a single HTML page.
 - **Save up to 5 matches** you're following. They're stored in your browser.
 - **Watch your API usage.** A built-in meter tracks your free monthly credits.
 - **Check out the players.** Current and career-high ranking, age, country and playing hand, the last 10
-  results with scores, and their head-to-head record. All computed locally from open match data.
+  results with scores, and their head-to-head record, right under every match.
+- **Players tab.** Search any ATP or WTA player for a full profile: ranking history chart, this season and
+  last-52-week records, win % by surface and by tournament level, titles and finals, recent form and streak.
+  Works any day, even when no tournament has odds open.
+- **Head-to-head tab.** Pick two players for their record against each other (overall and by surface), every
+  meeting, and a side-by-side comparison of rank, form and records.
 - **Use it from the terminal** with `scan.py`, if you prefer text output.
 
 ## The ideas behind it
@@ -126,6 +135,15 @@ It then checks each main draw is complete:
 a final was played, every player but the champion lost once, and every round adds up. Each run prints a line
 per tournament, marking `! some results missing` or `! no draw found` where Wikipedia itself has gaps.
 
+#### What the Players tab counts
+
+- **Records** leave out walkovers (no match was played). Qualifying matches are their own row under "by level".
+- **Levels** use each source's codes: Grand Slam, Tour Finals, 1000, 500, 250, Challenger / 125, ITF and team
+  events. The archive files the ATP's 250s and 500s under one code, so those show as "Tour 250/500".
+- **Surface and level for Wikipedia matches** come from the season page's schedule row ("Grass", "ATP 500").
+- **Ranking history** is the first ranking of each month from the archive (2010 to June 2026), plus today's rank
+  from Wikipedia, joined by a dashed line because there are no weekly rankings in between.
+
 #### Merging the two sources
 
 The catch-up deliberately starts two weeks before the archive ends, so tournaments that were only half-recorded
@@ -183,7 +201,8 @@ The tests run against a small fake API server, so they never use your real credi
 
 ```
 browser (web/index.html)
-   │  fetch /api/tournaments, /api/odds, /api/credits, /api/matchup
+   │  fetch /api/tournaments, /api/odds, /api/credits, /api/matchup,
+   │        /api/players/search, /api/player, /api/h2h
    ▼
 server.py                ── tiny local web server; keeps your API key off the page
    │
@@ -201,6 +220,7 @@ server.py ── odds_server/stats.py ── player index (archive + Wikipedia d
 odds_server/core.py           pure functions, fully unit-tested
 odds_server/odds_api.py       API client
 odds_server/stats.py          player data: download, index, name matching, form, head-to-head
+odds_server/analysis.py       player profiles: records by surface / level, titles, streaks, rank history, H2H
 odds_server/wiki.py           Wikipedia API client + infobox and draw-bracket parsers
 odds_server/env.py            tiny .env reader
 server.py                     local web server

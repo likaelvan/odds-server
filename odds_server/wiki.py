@@ -220,7 +220,7 @@ def add_live_rankings(matchup, client, max_age_hours=24):
 
 # --------------------------------------------------------------------------- season + draws
 def season_draw_pages(client, tour, year, max_age_hours=24):
-    """[(draw page title, approx date yyyymmdd, draw size or None)] in calendar order.
+    """[(draw page title, approx date yyyymmdd, draw size, surface, level)] in calendar order.
 
     Read from the "Schedule" section of the season article only (the intro and statistics
     sections link to the same draws with unrelated dates). Each schedule row has the week
@@ -249,9 +249,30 @@ def season_draw_pages(client, tour, year, max_age_hours=24):
             seen.add(t)
             mon, day = row_day or (month, 1)
             y = year - 1 if mon == 12 and month == 1 else year  # season can start in late December
-            size = re.findall(r"\b(\d{2,3})S\b", line[:m.start()])
-            out.append((t, y * 10000 + mon * 100 + day, int(size[-1]) if size else None))
+            before = line[:m.start()]
+            size = re.findall(r"\b(\d{2,3})S\b", before)
+            out.append((t, y * 10000 + mon * 100 + day, int(size[-1]) if size else None,
+                        _surface(before), _level(before)))
     return out
+
+
+def _surface(cell):
+    """'Grass – €757,320 – 28S/16Q/16D' -> 'Grass'; 'Hard (i)' -> 'Hard'."""
+    found = re.findall(r"\b(Hard|Clay|Grass|Carpet)\b", cell or "")
+    return found[-1] if found else ""
+
+
+def _level(cell):
+    """Tournament category from the schedule cell, in the archive's codes: G (Grand Slam), F (tour finals),
+    1000 / 500 / 250 / 125, or "" when unknown."""
+    c = cell or ""
+    if re.search(r"Grand Slam", c):
+        return "G"
+    found = re.findall(r"(?:ATP|WTA)(?: Tour)?(?: Masters)? (1000|500|250|125)\b|(ATP Finals|WTA Finals)", c)
+    if not found:
+        return ""
+    num, finals = found[-1]
+    return "F" if finals else num
 
 
 ROUND_CODES = [("semifinal", "SF"), ("semi-final", "SF"), ("quarterfinal", "QF"), ("quarter-final", "QF"), ("final", "F"), ("fourth round", "4R"),
@@ -519,7 +540,7 @@ def recent_results(client, tour, since, today=None, log=print):
     log("  %d tournaments on Wikipedia since %s" % (len(events), str(since)))
     client.pages_full([e[0] for e in events], max_age_hours=12)  # one batched fetch; collect_draw reads the cache
     results, report = [], []
-    for title, d, size in events:
+    for title, d, size, surface, level in events:
         ms, notes = collect_draw(client, title)
         main = [m for m in ms if m["stage"] == "main"]
         n_q = len(ms) - len(main)
@@ -528,7 +549,8 @@ def recent_results(client, tour, since, today=None, log=print):
         if status == "partial" and not finished:
             status = "in progress"
         for m in ms:
-            results.append(dict(m, date=d, tournament=tournament_name(title), source=title))
+            results.append(dict(m, date=d, tournament=tournament_name(title), source=title,
+                                surface=surface, level=level))
         report.append({"title": title, "date": d, "draw": size, "matches": len(main), "qualifying": n_q,
                        "status": status, "notes": notes})
         flag = {"complete": "", "in progress": "  (in progress)", "partial": "  ! some results missing",

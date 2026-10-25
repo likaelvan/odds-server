@@ -126,9 +126,9 @@ class WikiParsingTests(unittest.TestCase):
     def test_season_pages(self):
         c = FakeClient({"2026 WTA Tour": SEASON})
         pages = wiki.season_draw_pages(c, "wta", 2026)
-        self.assertEqual(pages, [("2026 French Open – Women's singles", 20260601, None),
-                                 ("2026 Ningbo Open – Singles", 20261012, None),
-                                 ("2026 Japan Women's Open – Singles", 20261012, None)])
+        self.assertEqual([p[:3] for p in pages], [("2026 French Open – Women's singles", 20260601, None),
+                                                  ("2026 Ningbo Open – Singles", 20261012, None),
+                                                  ("2026 Japan Women's Open – Singles", 20261012, None)])
 
     def test_live_rankings(self):
         c = FakeClient({"Leylah Fernández": None, "Leylah Fernandez": INFOBOX})

@@ -117,6 +117,7 @@ def build_index(tour, data_dir, out_path=None):
     # rankings: latest week = current rank; best rank ever seen = career high
     latest_date, current, best = 0, {}, {}
     first_rank_date = None
+    history = {}  # pid -> {yyyymm: (yyyymmdd, rank)}: first ranking week of each month
     for n in names:
         if not re.match(r"%s_rankings_.*\.csv$" % tour, n):
             continue
@@ -132,6 +133,10 @@ def build_index(tour, data_dir, out_path=None):
             b = best.get(pid)
             if b is None or rank < b[0] or (rank == b[0] and d < b[1]):
                 best[pid] = (rank, d)
+            month = d // 100
+            h = history.setdefault(pid, {})
+            if month not in h or d < h[month][0]:
+                h[month] = (d, rank)
 
     matches, data_through = [], 0
     for n in names:
@@ -148,7 +153,7 @@ def build_index(tour, data_dir, out_path=None):
                                     "dob": None, "ioc": r.get(key + "_ioc", ""), "ht": None}
             matches.append([d, r.get("tourney_name", ""), r.get("surface", ""), r.get("tourney_level", ""),
                             r.get("round", ""), _int(r.get("match_num")) or 0, w, l, r.get("score", ""),
-                            _int(r.get("winner_rank")), _int(r.get("loser_rank"))])
+                            _int(r.get("winner_rank")), _int(r.get("loser_rank")), "a"])
     # results newer than the dataset, read from Wikipedia draw pages by update_stats.py
     wiki_through = None
     wiki_file = os.path.join(data_dir, "%s_wiki_matches.json" % tour)
@@ -170,6 +175,8 @@ def build_index(tour, data_dir, out_path=None):
             p["rank"], p["points"] = current[pid]
         if pid in best:
             p["best"], p["best_date"] = best[pid]
+        if pid in history:  # flattened [yyyymm, rank, yyyymm, rank, ...] to keep the file small
+            p["rh"] = [x for month in sorted(history[pid]) for x in (month, history[pid][month][1])]
         out_players[pid] = p
 
     index = {
@@ -243,8 +250,8 @@ def merge_wiki_matches(players, matches, wiki_matches):
         if dup in seen:  # listed twice on Wikipedia (e.g. main page and a sub-page)
             continue
         seen.add(dup)
-        matches.append([wm["date"], wm["tournament"], wm.get("surface", ""), "wiki", wm["round"], 1000 + i,
-                        w, l, wm["score"], None, None])
+        matches.append([wm["date"], wm["tournament"], wm.get("surface", ""), wm.get("level", ""), wm["round"],
+                        1000 + i, w, l, wm["score"], None, None, "w"])
         added += 1
         latest = max(latest or 0, wm["date"])
     return added, latest
@@ -327,7 +334,7 @@ class Stats:
             "opponent": self.players.get(opp, {}).get("name", "?"),
             "opponent_rank": m[10] if won else m[9],
             "result": "W" if won else "L", "score": m[8],
-            "source": "wikipedia" if m[3] == "wiki" else "dataset",
+            "source": "wikipedia" if len(m) > 11 and m[11] == "w" else "dataset",
         }
 
     def profile(self, pid, last=10):

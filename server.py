@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlparse
 
 from odds_server.env import load_env, setting
 from odds_server.odds_api import OddsAPI, OddsAPIError
+from odds_server.analysis import h2h_page, player_page, search
 from odds_server.stats import Stats, StatsError
 from odds_server.wiki import WikiClient, WikiError, add_live_rankings
 
@@ -63,6 +64,10 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _players_api(self, path, q):
+        code, body = players_api(path, q)
+        return self._send(code, body)
+
     def do_GET(self):
         url = urlparse(self.path)
         q = parse_qs(url.query)
@@ -82,6 +87,8 @@ class Handler(BaseHTTPRequestHandler):
                     except (StatsError, OSError, ValueError) as e:
                         out[tour] = {"ready": False, "error": str(e)}
                 return self._send(200, out)
+            if url.path in ("/api/players/search", "/api/player", "/api/h2h"):
+                return self._players_api(url.path, q)
             if url.path == "/api/matchup":
                 tour = (q.get("tour") or [""])[0].lower()
                 if tour not in ("atp", "wta"):
@@ -132,6 +139,62 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:  # unexpected: report instead of crashing
             return self._send(500, {"error": "Server error: %s" % e})
         self._send(404, {"error": "Not found"})
+
+
+def _live(page, rankings_date):
+    """Add Wikipedia's current rank / career high to a player page, and extend the rank history."""
+    if setting("LIVE_RANKS", "1") == "0":
+        return
+    wrapper = {"rankings_date": rankings_date, "players": [dict(page, match="exact", query=page["name"])]}
+    with _wiki_lock:
+        try:
+            add_live_rankings(wrapper, _wiki)
+        except WikiError as e:
+            page["live_error"] = str(e)
+            return
+    live = wrapper["players"][0]
+    for k in ("rank", "points", "rank_date", "rank_source", "career_high", "career_high_date"):
+        if k in live:
+            page[k] = live[k]
+    hist = page.get("rank_history")
+    if live.get("rank_source") == "wikipedia" and live.get("rank_date") and hist is not None:
+        month = live["rank_date"][:7]
+        if not hist or hist[-1]["month"] < month:
+            hist.append({"month": month, "rank": live["rank"], "live": True})
+
+
+def players_api(path, q):
+    """(status, body) for the Players / Head-to-head tabs."""
+    tour = (q.get("tour") or [""])[0].lower()
+    if tour not in ("atp", "wta"):
+        return 400, {"error": "Pick ATP or WTA."}
+    try:
+        with _lock:
+            st = get_stats(tour)
+    except StatsError as e:
+        return 404, {"error": str(e)}
+    if path == "/api/players/search":
+        with _lock:
+            return 200, {"results": search(st, (q.get("q") or [""])[0])}
+    ids = [(q.get(k) or [""])[0] for k in (("id",) if path == "/api/player" else ("a", "b"))]
+    missing = [i for i in ids if i not in st.players]
+    if missing:
+        return 404, {"error": "Player not found."}
+    if path == "/api/player":
+        with _lock:
+            page = player_page(st, ids[0])
+        _live(page, page.get("rankings_date"))
+        return 200, page
+    with _lock:
+        out = h2h_page(st, ids[0], ids[1])
+    for p in out["players"]:
+        _live(p, _ymd_or(st.ix.get("rankings_date")))
+    return 200, out
+
+
+def _ymd_or(d):
+    s = str(d or "")
+    return "%s-%s-%s" % (s[:4], s[4:6], s[6:8]) if len(s) == 8 else None
 
 
 def main():

@@ -175,9 +175,9 @@ class RealShapeTests(unittest.TestCase):
     def test_schedule_rows(self):
         pages = wiki.season_draw_pages(FakeClient({"2026 WTA Tour": SEASON_REAL}), "wta", 2026)
         self.assertEqual(pages, [
-            ("2026 ASB Classic – Women's singles", 20251229, 32),   # season starts in December
-            ("2026 BOSS Open – Singles", 20260608, 28),             # "8 Jun" week, 28-player draw
-            ("2026 Big Open – Women's singles", 20260525, 128),      # "May 25", not the intro's ref date
+            ("2026 ASB Classic – Women's singles", 20251229, 32, "Hard", ""),   # season starts in December
+            ("2026 BOSS Open – Singles", 20260608, 28, "Grass", "250"),        # "8 Jun" week, ATP 250 on grass
+            ("2026 Big Open – Women's singles", 20260525, 128, "Clay", ""),    # "May 25", not the intro's date
         ])
 
     def test_qualifying_matches_are_labelled_and_kept_apart(self):
