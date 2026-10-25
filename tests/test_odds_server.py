@@ -148,3 +148,34 @@ class ClientTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RetryTests(unittest.TestCase):
+    def test_retries_dropped_connection_then_succeeds(self):
+        from unittest import mock
+        tmp = tempfile.mkdtemp()
+        try:
+            api = odds_api.OddsAPI("good", cache_dir=tmp)
+            ok = mock.MagicMock()
+            ok.__enter__.return_value.read.return_value = b"[]"
+            ok.__enter__.return_value.headers = {}
+            calls = [ConnectionResetError(10054, "forcibly closed"), ok]
+            with mock.patch.object(odds_api.urllib.request, "urlopen", side_effect=calls), \
+                    mock.patch.object(odds_api.time, "sleep"):
+                self.assertEqual(api.tennis_tournaments(), [])
+        finally:
+            shutil.rmtree(tmp)
+
+    def test_gives_clear_message_after_retries(self):
+        from unittest import mock
+        tmp = tempfile.mkdtemp()
+        try:
+            api = odds_api.OddsAPI("good", cache_dir=tmp)
+            with mock.patch.object(odds_api.urllib.request, "urlopen",
+                                   side_effect=ConnectionResetError(10054, "forcibly closed")), \
+                    mock.patch.object(odds_api.time, "sleep"):
+                with self.assertRaises(odds_api.OddsAPIError) as cm:
+                    api.tennis_tournaments()
+            self.assertIn("after 3 tries", str(cm.exception))
+        finally:
+            shutil.rmtree(tmp)

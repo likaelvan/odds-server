@@ -51,23 +51,31 @@ class OddsAPI:
         params["apiKey"] = self.api_key
         url = BASE_URL + path + "?" + urllib.parse.urlencode(params)
         req = urllib.request.Request(url, headers={"User-Agent": "odds-server/1.0"})
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                self._read_credits(resp.headers)
-                return json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            self._read_credits(e.headers)
+        attempts = 3
+        for attempt in range(1, attempts + 1):
             try:
-                detail = json.loads(e.read().decode("utf-8")).get("message", "")
-            except Exception:
-                detail = ""
-            if e.code == 401:
-                raise OddsAPIError("The API rejected your key (401). Check ODDS_API_KEY in .env. " + detail)
-            if e.code == 429:
-                raise OddsAPIError("Out of credits or too many requests (429). " + detail)
-            raise OddsAPIError("API error %s. %s" % (e.code, detail))
-        except urllib.error.URLError as e:
-            raise OddsAPIError("Could not reach the API: %s" % e.reason)
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    self._read_credits(resp.headers)
+                    return json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as e:
+                self._read_credits(e.headers)
+                try:
+                    detail = json.loads(e.read().decode("utf-8")).get("message", "")
+                except Exception:
+                    detail = ""
+                if e.code == 401:
+                    raise OddsAPIError("The API rejected your key (401). Check ODDS_API_KEY in .env. " + detail)
+                if e.code == 429:
+                    raise OddsAPIError("Out of credits or too many requests (429). " + detail)
+                raise OddsAPIError("API error %s. %s" % (e.code, detail))
+            except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as e:
+                # dropped / reset connections are usually a network blip: wait and try again
+                if attempt < attempts:
+                    time.sleep(2 * attempt)
+                    continue
+                reason = getattr(e, "reason", e)
+                raise OddsAPIError("Could not reach The Odds API after %d tries (%s). Check your internet "
+                                   "connection, VPN or firewall, then try again." % (attempts, reason))
 
     # -- Credits ----------------------------------------------------------
     def _load_credits(self):

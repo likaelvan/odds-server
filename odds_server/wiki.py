@@ -68,8 +68,11 @@ class WikiClient:
                     time.sleep(5 * (attempt + 1))
                     continue
                 raise WikiError("Wikipedia API error %s" % e.code)
-            except urllib.error.URLError as e:
-                raise WikiError("Could not reach Wikipedia: %s" % e.reason)
+            except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as e:
+                if attempt < 3:  # dropped / reset connection: wait and retry
+                    time.sleep(3 * (attempt + 1))
+                    continue
+                raise WikiError("Could not reach Wikipedia: %s" % getattr(e, "reason", e))
             if data.get("error", {}).get("code") == "maxlag" and attempt < 3:
                 time.sleep(5)
                 continue
